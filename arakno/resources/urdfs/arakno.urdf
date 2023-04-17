@@ -254,7 +254,7 @@
       </collision>
     </link>
 
-    <link name="camera">
+    <!--<link name="camera">
       <visual>
         <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
         <geometry>
@@ -268,7 +268,7 @@
           <mesh filename="package://resources/meshes/stl/camera.stl" scale="1.0 1.0 1.0"/>
         </geometry>
       </collision>
-    </link>
+    </link>-->
 
     <link name="trunk">
       <inertial>
@@ -387,7 +387,7 @@
       <limit lower="-0.785" upper="0.785" effort="30" velocity="5"/>
     </joint>
 
-    <joint name="camera_joint" type="revolute">
+    <!--<joint name="camera_joint" type="revolute">
       <origin xyz="0 0.14358 0" rpy="1.5708 0 -1.5708"/>
       <parent link="trunk"/>
       <child link="camera"/>
@@ -397,7 +397,7 @@
 
     <material name="camera">
       <color rgba="0.637597 0.066626 0.104617 1.0"/>
-    </material>
+    </material>-->
 
     <material name="lowerleg">
       <color rgba="0.597202 0.48515 0.391573 1.0"/>

@@ -14,9 +14,8 @@ env = gym.make('arakno-v0')
 
 env.reset()
 while True:
-    #to learn to walk on a flat plane the camera is not needed for now
+    #to learn to walk on a flat plane-> the camera is not needed for now
     env.render()
-
     #TO DO: step reward action
     p.stepSimulation()    
 
