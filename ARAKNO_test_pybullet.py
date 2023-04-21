@@ -45,7 +45,7 @@ FR_lowerleg_joint = p.addUserDebugParameter('FR_lowerleg_joint', -np.pi, np.pi, 
 FR_shoulder_joint = p.addUserDebugParameter('FR_shoulder_joint', -np.pi, np.pi, 0)
 FR_upperleg_joint = p.addUserDebugParameter('FR_upperleg_joint', -np.pi, np.pi, 0)
 
-camera_joint = p.addUserDebugParameter('camera_joint', -np.pi, np.pi, 0)
+#camera_joint = p.addUserDebugParameter('camera_joint', -np.pi, np.pi, 0)
 
 #get information about position of the joints in the vector
 for joint in range(num_joints):
@@ -85,7 +85,7 @@ while True:
     user_FR_lowerleg = p.readUserDebugParameter(FR_lowerleg_joint)
     user_FL_lowerleg = p.readUserDebugParameter(FL_lowerleg_joint)
 
-    user_camera = p.readUserDebugParameter(camera_joint)
+    #user_camera = p.readUserDebugParameter(camera_joint)
 
     #reports the current position and orientation of the base (or root link) of the body in Cartesian world coordinates
     #orientation is a quaternion
@@ -116,7 +116,7 @@ while True:
     p.setJointMotorControl2(araknoId,10, p.POSITION_CONTROL, targetPosition = user_FR_upperleg)
     p.setJointMotorControl2(araknoId,11, p.POSITION_CONTROL, targetPosition = user_FR_lowerleg)
 
-    p.setJointMotorControl2(araknoId,12, p.POSITION_CONTROL, targetPosition = user_camera)
+    #p.setJointMotorControl2(araknoId,12, p.POSITION_CONTROL, targetPosition = user_camera)
      
     #runs one step of the simulation
     p.stepSimulation()

@@ -192,7 +192,7 @@ class AraknoEnv(gym.Env):
             alive_penalty = 0.0
 
         # Compute the reward as a weighted sum of forward velocity, stability, and progress
-        reward = forward_vel * 0.5 + stability * 0.3 + progress_diff * 0.2 + alive_penalty
+        reward = stability * 0.3 + progress_diff * 0.7 + alive_penalty
 
         return reward
 
