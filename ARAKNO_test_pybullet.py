@@ -63,7 +63,6 @@ for joint in range(num_joints):
 p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0,\
     cameraPitch=-40, cameraTargetPosition=[0.55,-0.35,0.2])
 
-
 #infinite loop simulation, each time step is 1/240 of a second
 while True:
     #smooth simulation rendering

@@ -9,9 +9,9 @@ import math
 import numpy as np
 import random
 
-#TO DO: reset function-> do it need a return ?
-#change the reward function
-#add prev_state
+#TO DO:
+#change the reward function:  stability ? 
+#fix the apply_action , how to pass action ? 
 
 #----------------------------------------------------------------#
 #GOAL of the ENV -> reach a specific endpoint in a plane 
@@ -41,14 +41,12 @@ class AraknoEnv(gym.Env):
             print("INFO: ", info[0], ": ", info[1], " joint type: ", info[2])
             print("---------------------------------------------------")
         
-        self._max_n_steps = 1000
+        self._max_n_steps = 2000
         self.episode = 0
-        self.endpoint = (3,3) #point in the 2d plane
+        self.endpoint = (10,10) #point in the 2d plane
 
         #init of the prev state 
-        #(x, y, z), ori = p.getBasePositionAndOrientation(self.araknoId)
-        self.prev_pos = None
-        self.prev_ori = None
+        self.prev_pos, self.prev_orient = p.getBasePositionAndOrientation(self.araknoId)
 
         self.num_joints = 3
         self.num_legs = 4
@@ -80,20 +78,43 @@ class AraknoEnv(gym.Env):
         # Return whether the episode is done or not
         return done
 
+    def apply_action(self,action):
+        #action -> from the main, expected to be a list of action for all the angles 
+        
+        #joint to which apply the action
+        joint_indices = [0,1,2]#random values
+        #position control
+        p.setJointMotorControlArray(self.araknoId, joint_indices, p.POSITION_CONTROL, targetPositions=action)
+        #our observation spaces its composed by only joint pos , velocity control
+        #p.setJointMotorControlArray(self.robot, self.joint_indices, p.VELOCITY_CONTROL, targetPositions=angle)
+        
+
     def step(self, action):
         p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
 
-        target_positions = self.calculate_target_positions(action)
-        p.setJointMotorControlArray(self.robot, self.joint_indices, p.POSITION_CONTROL, targetPositions=target_positions)
-        p.stepSimulation()
+        #compute an action 
+        self.apply_action(action)
         
-        observation = self.get_observation()
-        #prev_pos, curr_pos, prev_orient, curr_orient
-        reward = 0 # self.compute_reward(#params)
-        done = self.check_done()
-        info = {}
-
+        #simulate the action
         p.stepSimulation()
+
+        #get the results
+        observation = self.get_observation()
+
+        #compute the reward
+        #get the current pose of the robot base after taking the action
+        curr_pos, curr_orient = p.getBasePositionAndOrientation(self.araknoId)
+        reward = self.compute_reward(prev_pos, curr_pos, self.prev_orient, self.curr_orient)
+
+        #check if done
+        done = self.check_done()
+
+        # Update the previous pose to be the current pose
+        self.prev_pos = curr_pos
+        self.prev_orient = curr_orient
+
+        #info-> if you want to check additional informations 
+        info = {}
 
         return observation, reward, done, info
     
@@ -152,7 +173,7 @@ class AraknoEnv(gym.Env):
         # Check if the center of mass (z-component) is above the ground
         return pos[2] > ground_height
 
-    def compute_progress(self,curr_pos):
+    def compute_progress(self,pos):
         # Compute the distance between the current position and the endpoint
 
         num_steps = 1
@@ -161,38 +182,55 @@ class AraknoEnv(gym.Env):
         # Compute the robot's progress
         #divided by the total distance it could have traveled in num_steps time steps of size step_size
         # Compute the robot's progress in both x and y directions
-        dx = (self.endpoint[0] - curr_pos[0]) / (num_steps * step_size)
-        dy = (self.endpoint[1] - curr_pos[1]) / (num_steps * step_size)
+        dx = (self.endpoint[0] - pos[0]) / (num_steps * step_size)
+        dy = (self.endpoint[1] - pos[1]) / (num_steps * step_size)
         progress = math.sqrt(dx**2 + dy**2)
 
         return progress
+    
+    def calculate_center_of_mass(robot_id, link_ids=None):
+        if link_ids is None:
+            # If no specific links are given, use all links of the robot
+            num_links = p.getNumJoints(robot_id)
+            link_ids = range(num_links)
+
+        total_mass = 0
+        com = np.array([0.0, 0.0, 0.0])
+        for link_id in link_ids:
+            link_info = p.getJointInfo(robot_id, link_id)
+            link_mass = link_info[0]
+            link_pos, link_orn = p.getLinkState(robot_id, link_id)[:2]
+            link_com = np.array(p.getLinkState(robot_id, link_id, computeLinkVelocity=0, computeForwardKinematics=1)[0]) - np.array(link_pos)
+            com += link_mass * link_com
+            total_mass += link_mass
+        com /= total_mass
+
+        return com
     
     #Progress -> define an endpoint that the robot need to reach in 2d plane
     #define the difference between the pos of the robot and the endpoint
     #use the Frobenius norm of the difference of the position
     #This encourages the robot to move forward and make progress over time
     def compute_reward(self,prev_pos, curr_pos, prev_orient, curr_orient):
-        # Compute the robot's forward velocity
-        forward_vel = (curr_pos[0] - prev_pos[0]) / dt
 
         # Compute the robot's stability
-        roll_diff = abs(curr_orient[0] - prev_orient[0])
-        pitch_diff = abs(curr_orient[1] - prev_orient[1])
-        yaw_diff = abs(curr_orient[2] - prev_orient[2])
+        roll_diff = abs(com[0] - curr_pos[0])
+        pitch_diff = abs(com[1] - curr_pos[1])
+        yaw_diff = abs(com[2] - curr_pos[2])
         stability = 1.0 / (1.0 + roll_diff + pitch_diff + yaw_diff)
 
         # Compute the difference between the current progress and the previous progress
         progress_diff = self.compute_progress(curr_pos, self.endpoint) - self.compute_progress(prev_pos, self.endpoint)
 
-        alive = self.is_alive()
         # Penalize if the robot has fallen or is not alive
+        alive = self.is_alive()
         if not alive:
             alive_penalty = -1.0
         else:
             alive_penalty = 0.0
 
         # Compute the reward as a weighted sum of forward velocity, stability, and progress
-        reward = stability * 0.3 + progress_diff * 0.7 + alive_penalty
+        reward = stability * 0.2 + progress_diff * 0.8 + alive_penalty
 
         return reward
 
@@ -200,7 +238,7 @@ class AraknoEnv(gym.Env):
         #reset the environment
         p.resetSimulation()
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0) # we will enable rendering after we loaded everything
-        p.setGravity(0,0,-10)
+        p.setGravity(0,0,-9.81)
 
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         self.planeId = p.loadURDF("plane.urdf", basePosition = [0, 0, 0])
@@ -213,8 +251,14 @@ class AraknoEnv(gym.Env):
         self.araknoId = p.loadURDF(path_urdf, init_position, init_orientation)
 
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
+
+        #init of the prev state 
+        self.prev_pos, self.prev_ori = p.getBasePositionAndOrientation(self.araknoId)
+
+        #get observation 
+        observation = self.get_observation()
         
-        #return 
+        return np.array(observation).astype(np.float32)
 
     #render the camera images
     def render(self, mode='human'):

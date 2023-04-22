@@ -13,6 +13,7 @@ env = gym.make('arakno-v0')
 #    env.step(env.action_space.sample()) # take a random action
 
 env.reset()
+#env.step(env.action_space.sample())
 while True:
     #to learn to walk on a flat plane-> the camera is not needed for now
     env.render()
