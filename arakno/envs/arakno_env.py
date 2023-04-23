@@ -9,9 +9,7 @@ import math
 import numpy as np
 import random
 
-#TO DO:
-#change the reward function:  stability ? 
-#fix the apply_action , how to pass action ? 
+#TO DO:The Env work with the gym functions but the robot doesn't move, recheck the reward function, check_done and step_iter if need it
 
 #----------------------------------------------------------------#
 #GOAL of the ENV -> reach a specific endpoint in a plane 
@@ -31,19 +29,34 @@ class AraknoEnv(gym.Env):
         p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-40, cameraTargetPosition=[0.55,-0.35,0.2])
         
         path_urdf = 'arakno/resources/urdfs/arakno.urdf'
-        init_position = [0,0,0.1]
-        init_orientation = p.getQuaternionFromEuler([0,0,0])
-        self.araknoId = p.loadURDF(path_urdf, init_position, init_orientation)
-        num_joints = p.getNumJoints(self.araknoId)
+        self.init_position = [0,0,0.22]
+        self.init_orientation = p.getQuaternionFromEuler([0,0,0])
+        self.araknoId = p.loadURDF(path_urdf, self.init_position, self.init_orientation)
 
+        num_joints = p.getNumJoints(self.araknoId)
         for joint in range(num_joints):
             info = p.getJointInfo(self.araknoId, joint)
             print("INFO: ", info[0], ": ", info[1], " joint type: ", info[2])
             print("---------------------------------------------------")
+        # Set the joint angles init config
+        self.joint_angles = [0.0,0.0,1.0, 0.0,0.0,1.0, 0.0,0.0,1.0, 0.0,0.0,1.0]
+        for i in range(len(self.joint_angles)):
+            p.resetJointState(self.araknoId, i, self.joint_angles[i])
         
         self._max_n_steps = 2000
-        self.episode = 0
-        self.endpoint = (10,10) #point in the 2d plane
+        self.envStepCounter = 0
+
+        # set the start position
+        self.start_position,_ = p.getBasePositionAndOrientation(self.araknoId)
+
+        # calculate the position of the endpoint 1 kilometer away from the start position
+        direction = np.array([1, 0, 0])  # direction as a unit vector
+        self.endpoint = self.start_position + 100 * direction #100 meters
+
+        #self.endpoint = (10,10) #point in the 2d plane
+
+        #make all simulations similar
+        self._seed()
 
         #init of the prev state 
         self.prev_pos, self.prev_orient = p.getBasePositionAndOrientation(self.araknoId)
@@ -55,15 +68,13 @@ class AraknoEnv(gym.Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.num_joints * self.num_legs,), dtype=np.float32)
         # Define the observation space
         # assume 6 observations for spider + 4 legs with (num_joints_per_leg + 1) states per leg (including foot)
-        #Each leg has num_joints + 1 observation dim, representing the joint angles and the foot position.
+        #Each leg has num_joints observation dim, representing the joint angles
         #include 6 dim to represent the position and orientation of the spider robot in 3D
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_legs * (self.num_joints + 1) + 6,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_legs * (self.num_joints) + 6,), dtype=np.float32)
 
-    def get_pos(self):
-        # Get the robot's base position and orientation
-        pos, ori = p.getBasePositionAndOrientation(self.araknoId)
-        x, y, z = pos  # Extract the x, y, and z components
-        return (x, y, z)
+    def _seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
     
     def check_done(self):
         #check if the experiment is done by checking the following conditions:
@@ -71,24 +82,23 @@ class AraknoEnv(gym.Env):
         #2.fallen on the ground
         #3.maximum number timesteps reached
         done = False
-        curr_pos = self.get_pos()
-        if (self.compute_progress(self,curr_pos, self.endpoint)<0.005) or (self.is_alive()) or (self.episode >= self._max_n_steps) :
+        (x,y,z), _ = p.getBasePositionAndOrientation(self.araknoId)
+        curr_pos = (x,y,z)
+        if (self.compute_progress(curr_pos)<0.005) or (self.is_alive()) or (self.envStepCounter >= self._max_n_steps) :
             done = True
 
         # Return whether the episode is done or not
         return done
 
     def apply_action(self,action):
-        #action -> from the main, expected to be a list of action for all the angles 
-        
-        #joint to which apply the action
-        joint_indices = [0,1,2]#random values
+        #action -> from the main, expected to be a list of action for all the joints 
+        # list dim = 12 
         #position control
-        p.setJointMotorControlArray(self.araknoId, joint_indices, p.POSITION_CONTROL, targetPositions=action)
-        #our observation spaces its composed by only joint pos , velocity control
-        #p.setJointMotorControlArray(self.robot, self.joint_indices, p.VELOCITY_CONTROL, targetPositions=angle)
+        for leg in range(self.num_legs):
+            for joint in range(self.num_joints):
+                joint_id = leg * 3 + joint
+                p.setJointMotorControl2(self.araknoId, joint_id, p.POSITION_CONTROL, targetPosition=action[joint_id]) 
         
-
     def step(self, action):
         p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
 
@@ -104,7 +114,9 @@ class AraknoEnv(gym.Env):
         #compute the reward
         #get the current pose of the robot base after taking the action
         curr_pos, curr_orient = p.getBasePositionAndOrientation(self.araknoId)
-        reward = self.compute_reward(prev_pos, curr_pos, self.prev_orient, self.curr_orient)
+        reward = self.compute_reward(self.prev_pos, curr_pos, self.prev_orient, curr_orient)
+
+        self.envStepCounter += 1
 
         #check if done
         done = self.check_done()
@@ -114,9 +126,9 @@ class AraknoEnv(gym.Env):
         self.prev_orient = curr_orient
 
         #info-> if you want to check additional informations 
-        info = {}
+        #info = {}
 
-        return observation, reward, done, info
+        return observation, reward, done, {}
     
     def get_observation(self):
         #the observation space in a 37-dimensional array, normalize 0-1
@@ -132,13 +144,14 @@ class AraknoEnv(gym.Env):
 
         #access to the current position and orientation of the base of the body 
         base_pos, base_or = p.getBasePositionAndOrientation(self.araknoId)
+        base_or = p.getEulerFromQuaternion(base_or)
         observation.append(base_pos[0])
         observation.append(base_pos[1])
         observation.append(base_pos[2])
         observation.append(base_or[0])
         observation.append(base_or[1])
         observation.append(base_or[2])
-        observation.append(base_or[3])
+        #observation.append(base_or[3])
 
         #take generalized coordinates
         for i in range(n_joints):
@@ -146,6 +159,7 @@ class AraknoEnv(gym.Env):
             observation.append(joint_state)
         
         #access to linear and angular velocity of the base of a body 
+        """ 
         base_v, base_w = p.getBaseVelocity(self.araknoId)
         observation.append(base_v[0])
         observation.append(base_v[1])
@@ -157,7 +171,7 @@ class AraknoEnv(gym.Env):
         #take generalized velocities
         for i in range(n_joints):
             joint_state = p.getJointState(self.araknoId, i)[1] # velocity
-            observation.append(joint_state)
+            observation.append(joint_state)"""
         
         #print("obs dim: ", len(observation)) #should be 37 dim, canceled the camera_joint
 
@@ -175,7 +189,6 @@ class AraknoEnv(gym.Env):
 
     def compute_progress(self,pos):
         # Compute the distance between the current position and the endpoint
-
         num_steps = 1
         step_size = 1
 
@@ -188,15 +201,10 @@ class AraknoEnv(gym.Env):
 
         return progress
     
-    def calculate_center_of_mass(robot_id, link_ids=None):
-        if link_ids is None:
-            # If no specific links are given, use all links of the robot
-            num_links = p.getNumJoints(robot_id)
-            link_ids = range(num_links)
-
+    def calculate_center_of_mass(self, robot_id):
         total_mass = 0
         com = np.array([0.0, 0.0, 0.0])
-        for link_id in link_ids:
+        for link_id in range(p.getNumJoints(robot_id)):
             link_info = p.getJointInfo(robot_id, link_id)
             link_mass = link_info[0]
             link_pos, link_orn = p.getLinkState(robot_id, link_id)[:2]
@@ -213,6 +221,8 @@ class AraknoEnv(gym.Env):
     #This encourages the robot to move forward and make progress over time
     def compute_reward(self,prev_pos, curr_pos, prev_orient, curr_orient):
 
+        com = self.calculate_center_of_mass(self.araknoId)
+
         # Compute the robot's stability
         roll_diff = abs(com[0] - curr_pos[0])
         pitch_diff = abs(com[1] - curr_pos[1])
@@ -220,7 +230,7 @@ class AraknoEnv(gym.Env):
         stability = 1.0 / (1.0 + roll_diff + pitch_diff + yaw_diff)
 
         # Compute the difference between the current progress and the previous progress
-        progress_diff = self.compute_progress(curr_pos, self.endpoint) - self.compute_progress(prev_pos, self.endpoint)
+        progress_diff = self.compute_progress(curr_pos) - self.compute_progress(prev_pos)
 
         # Penalize if the robot has fallen or is not alive
         alive = self.is_alive()
@@ -246,9 +256,11 @@ class AraknoEnv(gym.Env):
         p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-40, cameraTargetPosition=[0.55,-0.35,0.2])
         
         path_urdf = 'arakno/resources/urdfs/arakno.urdf'
-        init_position = [0,0,0.1]
-        init_orientation = p.getQuaternionFromEuler([0,0,0])
-        self.araknoId = p.loadURDF(path_urdf, init_position, init_orientation)
+        self.araknoId = p.loadURDF(path_urdf, self.init_position, self.init_orientation)
+
+        # Set the joint angles init config
+        for i in range(len(self.joint_angles)):
+            p.resetJointState(self.araknoId, i, self.joint_angles[i])
 
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
 
@@ -257,6 +269,8 @@ class AraknoEnv(gym.Env):
 
         #get observation 
         observation = self.get_observation()
+
+        self.envStepCounter = 0
         
         return np.array(observation).astype(np.float32)
 
