@@ -73,18 +73,18 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize,VecVideoR
 # env.close()
 
 # # # Enjoy trained agent
-model = PPO.load("models/a2c-AraknoEnv-v0_1.zip")
+model = PPO.load("models/a2c-AraknoEnv-v0_3.zip")
 env = DummyVecEnv([lambda: gym.make('arakno-v0')])
-env = VecNormalize.load("models/vec_normalize_1.pkl", env)
+env = VecNormalize.load("models/vec_normalize_3.pkl", env)
 #  do not update them at test time
 env.training = False
 # reward normalization is not needed at test time
 env.norm_reward = False
 
-# print("Enjoy trained agent")
-# obs = env.reset()
-# while True:
-#     action, _states = model.predict(obs)
-#     obs, rewards, dones, info = env.step(action)
-#     env.render()
-# env.close()
+print("Enjoy trained agent")
+obs = env.reset()
+while True:
+    action, _states = model.predict(obs)
+    obs, rewards, dones, info = env.step(action)
+    env.render()
+env.close()

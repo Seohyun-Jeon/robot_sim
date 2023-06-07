@@ -39,7 +39,7 @@ class AraknoEnv(gym.Env):
         self.plane = p.loadURDF("plane.urdf")
         
         path_urdf = 'araknoBot/resources/urdfs/arakno.urdf'
-        self.init_position = [0,0,0.25]
+        self.init_position = [0,0,0.15]
         self.init_orientation = p.getQuaternionFromEuler([0,0,0])
         self.araknoId = p.loadURDF(path_urdf, self.init_position, self.init_orientation)
 
@@ -95,7 +95,7 @@ class AraknoEnv(gym.Env):
 
         #load models
         self.plane = p.loadURDF("plane.urdf")
-        p.resetBasePositionAndOrientation(self.araknoId,self.init_position, self.init_orientation)
+        #p.resetBasePositionAndOrientation(self.araknoId,self.init_position, self.init_orientation)
 
         self.araknoId = p.loadURDF('araknoBot/resources/urdfs/arakno.urdf', self.init_position, self.init_orientation)
 
@@ -107,6 +107,7 @@ class AraknoEnv(gym.Env):
         p.addUserDebugText('GOAL', [10, 0 ,0.4], [1, 0, 0])
 
         self.goalId = p.loadURDF('araknoBot/resources/urdfs/goal.urdf', self.endpoint, self.init_orientation)
+        
 
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
 
@@ -311,7 +312,7 @@ class AraknoEnv(gym.Env):
         # Get the position and orientation of the robot's base
         pos, orn = p.getBasePositionAndOrientation(self.araknoId)
         #The ant is considered healthy if the z-coordinate of the torso is in this range [0.08, 1.0]
-        if pos[2] > 0.08 and pos[2]< 1.0:
+        if pos[2] > 0.07 and pos[2]< 2.2:
             return True
         else:
             return False
