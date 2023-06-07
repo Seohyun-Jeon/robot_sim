@@ -1,33 +1,20 @@
-#render() which allow to visualize the agent in action. Note that graphical interface does not work on google colab, 
-#so we cannot use it directly (we have to rely on render_mode='rbg_array' to retrieve an image of the scene
-
-import gym
-from gym import error, spaces, utils
-from gym.utils import seeding
-
-import os
-import pybullet as p
-import pybullet_data
-import math
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
-import random
-import time
+import pybullet as p
+import numpy as np
+import pybullet_envs
+import pybullet_data
+import os
+import math
 
-#TO DO:reward neagative or only positive ? 
-#
-
-#----------------------------------------------------------------#
-#GOAL of the ENV -> reach a specific endpoint in a plane 
-#----------------------------------------------------------------#
+#path_urdf = 'araknoBot/resources/urdfs/arakno.urdf'
+#'araknoBot/resources/urdfs/goal.urdf'
 
 
 class AraknoEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array'] #human
     }
-
-    def _seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
 
     def __init__(self, render = True): #True
         super(AraknoEnv, self).__init__()
@@ -43,26 +30,25 @@ class AraknoEnv(gym.Env):
             pybullet_data.getDataPath())  # used by loadURDF
 
         p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-40, cameraTargetPosition=[0.55,-0.35,0.2])
-        self._seed()
 
         p.resetSimulation()
-        p.setGravity(0, 0, -10)  # m/s^2
+        p.setGravity(0, 0, -9.81)  # m/s^2
         p.setTimeStep(0.01)   # sec
 
         #load models
         self.plane = p.loadURDF("plane.urdf")
         
-        path_urdf = 'arakno/resources/urdfs/arakno.urdf' 
+        path_urdf = 'araknoBot/resources/urdfs/arakno.urdf'
         self.init_position = [0,0,0.25]
         self.init_orientation = p.getQuaternionFromEuler([0,0,0])
         self.araknoId = p.loadURDF(path_urdf, self.init_position, self.init_orientation)
 
         # calculate the position of the endpoint 1 kilometer away from the start position
         direction = np.array([1, 0, 0])  # direction as a unit vector
-        self.endpoint = self.init_position + 2 * direction
+        self.endpoint = self.init_position + 10 * direction
 
         self.init_orientation = p.getQuaternionFromEuler([0,0,0])
-        self.goalId = p.loadURDF('arakno/resources/urdfs/goal.urdf', self.endpoint, self.init_orientation)
+        self.goalId = p.loadURDF('araknoBot/resources/urdfs/goal.urdf', self.endpoint, self.init_orientation)
 
         num_joints = p.getNumJoints(self.araknoId)
         for joint in range(num_joints):
@@ -81,43 +67,46 @@ class AraknoEnv(gym.Env):
         # set the start position
         self.start_position,_ = p.getBasePositionAndOrientation(self.araknoId)
 
-        # calculate the position of the endpoint 1 kilometer away from the start position
-        direction = np.array([1, 0, 0])  # direction as a unit vector
-        self.endpoint = self.start_position + 2 * direction #100 meters
-
         self.movingJoints = [0,1,2,3,4,5,6,7,8,9,10,11]
 
+        #store previous values
+        self.xposprev = self.start_position[0]
+        self.prev_distance_to_endpoint = math.sqrt((self.start_position[0] - self.endpoint[0]) ** 2 + (self.start_position[1] - self.endpoint[1]) ** 2)
+
         # Define the action space
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(12,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(109,), dtype=np.float32) #49
+        self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(12,), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(37,), dtype=np.float32) #49 109
     
-    def reset(self):
+    def reset(self,seed=None, options=None):
+        """
+        Important: the observation must be a numpy array
+        """
+        super().reset(seed=seed, options=options)
+
         #reset the environment
         p.resetSimulation()
-        p.setGravity(0, 0, -10)  # m/s^2
+        p.setGravity(0, 0, -9.81)  # m/s^2
         p.setTimeStep(0.01) 
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0) # we will enable rendering after we loaded everything
 
-        self.envStepCounter = 0
-
         self.vt = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self.vd = 0
-        self.maxV = 5# 8.72  # 0.12sec/60 deg = 500 deg/s = 8.72 rad/s
+        self.maxV = 5
 
         #load models
         self.plane = p.loadURDF("plane.urdf")
         p.resetBasePositionAndOrientation(self.araknoId,self.init_position, self.init_orientation)
 
-        self.araknoId = p.loadURDF('arakno/resources/urdfs/arakno.urdf', self.init_position, self.init_orientation)
+        self.araknoId = p.loadURDF('araknoBot/resources/urdfs/arakno.urdf', self.init_position, self.init_orientation)
 
         p.resetJointState(self.araknoId, 2, 1.0)
         p.resetJointState(self.araknoId, 5, 1.0)
         p.resetJointState(self.araknoId, 8, 1.0)
         p.resetJointState(self.araknoId, 11, 1.0)
 
-        p.addUserDebugText('GOAL', [2, 0 ,0.4], [1, 0, 0])
+        p.addUserDebugText('GOAL', [10, 0 ,0.4], [1, 0, 0])
 
-        self.goalId = p.loadURDF('arakno/resources/urdfs/goal.urdf', self.endpoint, self.init_orientation)
+        self.goalId = p.loadURDF('araknoBot/resources/urdfs/goal.urdf', self.endpoint, self.init_orientation)
 
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
 
@@ -127,21 +116,35 @@ class AraknoEnv(gym.Env):
         #get observation 
         observation = self.compute_observation()
         
-        return observation
+        return observation, {}
 
     def step(self, action):
 
+        #store the previous x pos
+        self.xposprev = self.compute_observation()[0]
+        self.distance_to_endpoint = math.sqrt((self.compute_observation()[0] - self.endpoint[0]) ** 2 + (self.compute_observation()[1] - self.endpoint[1]) ** 2)
+
         self.assign_throttle(action)
+
+        #simulate the action
+        p.stepSimulation()
 
         observation = self.compute_observation()
 
-        reward = self.compute_reward()
+        reward = self.comp_reward(action)
 
         done = self.check_done()
+        truncated = False
+        info = {}
 
-        self.envStepCounter += 1
-
-        return observation, reward, done, {}
+        #return observation, reward, done, {}
+        return (
+            observation,
+            reward,
+            done,
+            truncated,
+            info,
+        )
     
     def clamp(self, n, minn, maxn):
         return max(min(maxn, n), minn)
@@ -164,8 +167,7 @@ class AraknoEnv(gym.Env):
             self.moveLeg(id=key,  target=self.vt[i])
     
     def compute_observation(self):
-
-        baseOri = np.array(p.getBasePositionAndOrientation(self.araknoId))
+        baseOri = p.getBasePositionAndOrientation(self.araknoId)
         JointStates = p.getJointStates(self.araknoId, self.movingJoints)
         BaseAngVel = p.getBaseVelocity(self.araknoId)
 
@@ -211,11 +213,7 @@ class AraknoEnv(gym.Env):
           JointStates[11][1]
           ])
         
-        external_forces = np.array([np.array(joint[2])
-                                  for joint in JointStates])
-        obs = np.append(obs, external_forces.ravel())
-        
-        return obs.tolist()
+        return np.array(obs, dtype=np.float32)
     
     def calculate_center_of_mass(self, robot_id):
         total_mass = 0
@@ -231,83 +229,89 @@ class AraknoEnv(gym.Env):
 
         return com
     
-    def compute_reward(self):
+    def comp_reward(self,action):
 
         baseOri = p.getBasePositionAndOrientation(self.araknoId)
-        xposbefore = baseOri[0][0]
-
-        dx_before = (self.endpoint[0] - xposbefore)
- 
-        xvelbefore = p.getBaseVelocity(self.araknoId)[0][0]
-
-        p.stepSimulation()
-        
-        baseOri = p.getBasePositionAndOrientation(self.araknoId)
-        xposafter = baseOri[0][0]
-
-        dx_after = (self.endpoint[0] - xposafter)
-
-        xvelafter  = p.getBaseVelocity(self.araknoId)[0][0]
-
-        # Compute the difference between the current progress and the previous progress
-        progress_diff = dx_after - dx_before
 
         com = self.calculate_center_of_mass(self.araknoId)
-
         # Compute the robot's stability
         roll_diff = abs(com[0] - baseOri[0][0])
         pitch_diff = abs(com[1] - baseOri[0][1])
         yaw_diff = abs(com[2] - baseOri[0][2])
+
         stability = 1.0 / (1.0 + roll_diff + pitch_diff + yaw_diff)
 
-        # forward_reward = (xposafter - xposbefore)
-        forward_reward = 20 * (xvelbefore - xvelafter)
+        #control if robot flipped
+        # contact points of arakno with plane
+        # list should have a length of self.num_of_legs (for each end link per leg) if spider is walking normally 
+        contact_points = p.getContactPoints(self.araknoId, self.plane)
+        contact_cost = 0  # 5 * 1e-1 * len(ContactPoints)
+        # list of joint_ids of end links of for each leg
+        end_joint_ids = [(4 * x + 3) for x in range(4)]
+        # list to store contact points that are not end links
+        end_contact_points_list = []
+        # iterate over contact list
+        for x in range(len(contact_points)):
+            # append to end contact points list if joint id from an end link
+            if contact_points[x][3] not in end_joint_ids:
+                end_contact_points_list.append(contact_points[x])
+        # checks if any links (other than end links) of the spiderbot touches plane, i.e "flipped" 
+        if len(end_contact_points_list) != 0:
+          contact_cost = 10
+        
+        #A negative reward for penalising the ant if it takes actions that are too large. 
+        ctrl_cost = 0.5 * np.square(action).sum() 
 
-        #reward from applied torque to the motor in the last timestep
-        JointStates = p.getJointStates(self.araknoId, self.movingJoints)
-        torques = np.array([np.array(joint[3]) for joint in JointStates])
-        ctrl_cost = 1.0 * np.square(torques).sum()
+        #reward based on position from along x-axis
+        #frametime is 0.01 - making the default dt = 5 * 0.01 = 0.05
+        # the time between actions and is dependent on the frame_skip parameter (default is 5)
 
-        #help the robot to detect when it has made contact with the ground, and provide 
-        # information about the force and direction of the ground reaction forces
-        #chech contact point with ground
-        ContactPoints = p.getContactPoints(self.araknoId, self.plane)
-        contact_cost = 5 * 1e-1 * len(ContactPoints)
+        #move_forward = (self.xposprev - p.getBasePositionAndOrientation(self.araknoId)[0][0])/0.01
+        #print("check ", move_forward)
+
+        # Calculate the Euclidean distance between the agent and the endpoint
+        distance_to_endpoint = math.sqrt((p.getBasePositionAndOrientation(self.araknoId)[0][0] - self.endpoint[0]) ** 2 + (p.getBasePositionAndOrientation(self.araknoId)[0][1] - self.endpoint[1]) ** 2)
+        move_forward  = distance_to_endpoint - self.prev_distance_to_endpoint 
+        #print("check ", move_forward)
+
+        #based on velocity in x axis 
+        forward_vel = 5 * p.getBaseVelocity(self.araknoId)[0][0] - 5
 
         # Penalize if the robot has fallen or is not alive
         alive = self.is_alive()
         if not alive:
             alive_penalty = -1.0
         else:
-            alive_penalty = 0.0
-        
-        reward = forward_reward - ctrl_cost - contact_cost + alive_penalty + progress_diff + stability
-
-        #reward = reward if reward > 0 else 0
+            alive_penalty = 1.0
+    
+        reward = alive_penalty + move_forward - contact_cost - ctrl_cost #+ stability  + forward_vel
         
         return reward
     
     def check_done(self):
         #check if the experiment is done by checking the following conditions:
         #1.reached the endpoint
-        #2.fallen on the ground
-        #3.maximum number timesteps reached
+        #2.fallen on the ground or jump to high
+        #if flipped
+        #3.maximum number timesteps reached timeout 
         done = False
         curr_pos, _ = p.getBasePositionAndOrientation(self.araknoId)
-        if (not self.is_alive()) or (self.envStepCounter >= 1000) or (self.endpoint[0] - curr_pos[0]) < 0.01:
-            print("You Dead")
+        if (not self.is_alive()):
+            #print("You Dead")
+            done = True
+        if (self.endpoint[0] - curr_pos[0]) < 0.01 and (self.endpoint[1] - curr_pos[1]) < 0.01 :
+            print("Arrived")
             done = True
 
         # Return whether the episode is done or not
         return done
 
+    #check if the araknoBot have healthy behaviors
     def is_alive(self):
         # Get the position and orientation of the robot's base
         pos, orn = p.getBasePositionAndOrientation(self.araknoId)
-        #COM pos, height of body base => 0,15
-        ground_height = 0.087
-        # Check if the center of mass (z-component) is above the ground
-        if pos[2] > ground_height:
+        #The ant is considered healthy if the z-coordinate of the torso is in this range [0.08, 1.0]
+        if pos[2] > 0.08 and pos[2]< 1.0:
             return True
         else:
             return False
@@ -318,3 +322,4 @@ class AraknoEnv(gym.Env):
 
     def close(self):
         p.disconnect()
+        #pass

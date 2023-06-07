@@ -19,7 +19,7 @@ p.setAdditionalSearchPath(pybullet_data.getDataPath())
 planeId = p.loadURDF("plane.urdf")
 
 #using my own URDF
-path_urdf = 'arakno/resources/urdfs/arakno.urdf'
+path_urdf = 'araknoBot/resources/urdfs/arakno.urdf'
 #specify the spawn pose
 init_position = [0,0,0.5]
 init_orientation = p.getQuaternionFromEuler([0,0,0])
